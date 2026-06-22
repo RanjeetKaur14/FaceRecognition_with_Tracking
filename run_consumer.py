@@ -1,5 +1,6 @@
 from kafka import KafkaConsumer
 from concurrent.futures import ThreadPoolExecutor
+import os
 
 from services.kafka_consumer_service import (
     KafkaConsumerService
@@ -9,7 +10,10 @@ consumer_service = KafkaConsumerService()
 
 consumer = KafkaConsumer(
     "face-events",
-    bootstrap_servers="localhost:9092",
+    bootstrap_servers=os.getenv(
+        "KAFKA_BOOTSTRAP_SERVERS",
+        "localhost:29092"
+    ),
     auto_offset_reset="latest",
     group_id="face-recognition-group"
 )

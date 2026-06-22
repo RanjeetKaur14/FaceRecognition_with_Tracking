@@ -1,0 +1,10 @@
+.venv
+venv
+__pycache__
+*.pyc
+saved_faces
+invalid_faces
+temp_search
+logs
+.git
+.gitignore

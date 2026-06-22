@@ -1,27 +1,42 @@
-version: '3.5'
+
 
 services:
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.4.0
+    container_name: zookeeper
+    restart: unless-stopped
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
 
   kafka:
     image: confluentinc/cp-kafka:7.4.0
+    container_name: kafka
+    restart: unless-stopped
     depends_on:
       - zookeeper
     ports:
       - "9092:9092"
+      - "29092:29092"
+
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092
+
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
 
   etcd:
     image: quay.io/coreos/etcd:v3.5.5
     container_name: etcd
+    restart: unless-stopped
     command: >
       etcd
       -advertise-client-urls=http://etcd:2379
@@ -32,16 +47,20 @@ services:
   minio:
     image: minio/minio
     container_name: minio
+    restart: unless-stopped
     command: minio server /data
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     ports:
       - "9000:9000"
+    volumes:
+      - minio_data:/data
 
   milvus:
     image: milvusdb/milvus:v2.4.4
     container_name: milvus
+    restart: unless-stopped
     command: ["milvus", "run", "standalone"]
     depends_on:
       - etcd
@@ -52,3 +71,70 @@ services:
     ports:
       - "19530:19530"
       - "9091:9091"
+    volumes:
+      - milvus_data:/var/lib/milvus
+
+  backend:
+    build: .
+    image: facerecognition:latest
+    container_name: backend
+    restart: unless-stopped
+    depends_on:
+      - kafka
+      - milvus
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      MILVUS_HOST: milvus
+      MILVUS_PORT: 19530
+    command: uvicorn api:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./saved_faces:/app/saved_faces
+      - ./invalid_faces:/app/invalid_faces
+      - ./temp_search:/app/temp_search
+
+  consumer:
+    image: facerecognition:latest
+    container_name: consumer
+    restart: unless-stopped
+    depends_on:
+      - kafka
+      - milvus
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      MILVUS_HOST: milvus
+      MILVUS_PORT: 19530
+    command: python run_consumer.py
+    volumes:
+      - ./saved_faces:/app/saved_faces
+
+  history_consumer:
+    image: facerecognition:latest
+    container_name: history_consumer
+    restart: unless-stopped
+    depends_on:
+      - kafka
+      - milvus
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      MILVUS_HOST: milvus
+      MILVUS_PORT: 19530
+    volumes:
+      - ./saved_faces:/app/saved_faces
+    command: python -u -m services.detection_history_consumer
+      
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.frontend
+    container_name: frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  minio_data:
+  milvus_data:

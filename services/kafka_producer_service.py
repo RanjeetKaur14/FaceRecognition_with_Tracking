@@ -1,5 +1,6 @@
 from kafka import KafkaProducer
 import json
+import os
 
 
 class KafkaProducerService:
@@ -7,7 +8,10 @@ class KafkaProducerService:
     def __init__(self):
 
         self.producer = KafkaProducer(
-            bootstrap_servers='localhost:9092',
+            bootstrap_servers=os.getenv(
+                "KAFKA_BOOTSTRAP_SERVERS",
+                "localhost:29092"
+            ),
             value_serializer=lambda v:
                 json.dumps(v).encode('utf-8')
         )

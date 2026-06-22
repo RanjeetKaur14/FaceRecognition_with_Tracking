@@ -7,6 +7,8 @@ from pymilvus import (
     utility
 )
 
+import os
+
 
 class MilvusService:
 
@@ -14,8 +16,14 @@ class MilvusService:
 
         connections.connect(
             alias="default",
-            host="localhost",
-            port="19530"
+            host=os.getenv(
+                "MILVUS_HOST",
+                "localhost"
+            ),
+            port=os.getenv(
+                "MILVUS_PORT",
+                "19530"
+            )
         )
 
         self.person_collection_name = "persons"

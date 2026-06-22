@@ -96,22 +96,33 @@ async def search_person(
 
 @app.get("/stats")
 def get_stats():
-    """
-    Fire both Milvus count queries in parallel — they're independent
-    and each involves a network round-trip.
-    """
-    future_persons = _executor.submit(
-        search_service.milvus_service.get_count
-    )
-    future_events = _executor.submit(
-        search_service.milvus_service.get_event_count
-    )
 
-    return {
-        "total_persons": future_persons.result(),
-        "total_events":  future_events.result(),
-    }
+    try:
 
+        future_persons = _executor.submit(
+            search_service.milvus_service.get_count
+        )
+
+        future_events = _executor.submit(
+            search_service.milvus_service.get_event_count
+        )
+
+        return {
+            "total_persons": future_persons.result(),
+            "total_events": future_events.result()
+        }
+
+    except Exception as e:
+
+        print(
+            "STATS ERROR:",
+            str(e)
+        )
+
+        return {
+            "total_persons": 0,
+            "total_events": 0
+        }
 
 @app.get("/events")
 def get_events():
@@ -185,49 +196,72 @@ async def stream_events():
 
         while True:
 
-            collection_name = (
-                search_service
-                .milvus_service
-                .event_collection_name
-            )
+            try:
 
-            c = Collection(collection_name)
-
-            events = c.query(
-                expr="person_id >= 0",
-                output_fields=[
-                    "event_id",
-                    "person_id",
-                    "camera_id",
-                    "store_id",
-                    "timestamp",
-                    "image_path"
-                ]
-            )
-
-            if events:
-
-                events.sort(
-                    key=lambda x: x["timestamp"],
-                    reverse=True
+                collection_name = (
+                    search_service
+                    .milvus_service
+                    .event_collection_name
                 )
 
-                latest = events[0]
+                c = Collection(collection_name)
 
-                if latest["event_id"] != last_event_id:
+                # ensure collection is loaded
+                c.load()
 
-                    last_event_id = latest["event_id"]
+                events = c.query(
+                    expr="person_id >= 0",
+                    output_fields=[
+                        "event_id",
+                        "person_id",
+                        "camera_id",
+                        "store_id",
+                        "timestamp",
+                        "image_path"
+                    ]
+                )
 
-                    latest["image_url"] = (
-                        f"http://127.0.0.1:8000/"
-                        f"saved_faces/"
-                        f"{latest['image_path'].split('/')[-1]}"
+                if events:
+
+                    events.sort(
+                        key=lambda x: x.get("timestamp", ""),
+                        reverse=True
                     )
 
-                    yield {
-                        "event": "new_event",
-                        "data": json.dumps(latest)
-                    }
+                    latest = events[0]
+
+                    current_event_id = latest.get("event_id")
+
+                    if current_event_id != last_event_id:
+
+                        last_event_id = current_event_id
+
+                        filename = os.path.basename(
+                            latest.get(
+                                "image_path",
+                                ""
+                            )
+                        )
+
+                        latest["image_url"] = (
+                            f"http://127.0.0.1:8000/"
+                            f"saved_faces/"
+                            f"{filename}"
+                        )
+
+                        latest = _coerce_event(latest)
+
+                        yield {
+                            "event": "new_event",
+                            "data": json.dumps(latest)
+                        }
+
+            except Exception as e:
+
+                print(
+                    "STREAM ERROR:",
+                    str(e)
+                )
 
             await asyncio.sleep(0.25)
 

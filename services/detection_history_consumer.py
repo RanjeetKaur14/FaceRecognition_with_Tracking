@@ -1,82 +1,108 @@
 from kafka import KafkaConsumer
 import json
+import os
+import time
 
 from services.milvus_service import MilvusService
 
 
-consumer = KafkaConsumer(
-    "detection-events",
-    bootstrap_servers="localhost:9092",
-    auto_offset_reset="latest",
-    group_id="detection-history-group",
-    enable_auto_commit=True
-)
+def start_consumer():
 
-milvus_service = MilvusService()
+    # Wait until Kafka becomes available
+    while True:
+        try:
 
-print("Detection History Consumer Started...")
+            consumer = KafkaConsumer(
+                "detection-events",
+                bootstrap_servers=os.getenv(
+                    "KAFKA_BOOTSTRAP_SERVERS",
+                    "localhost:29092"
+                ),
+                auto_offset_reset="earliest",
+                group_id="detection-history-group",
+                enable_auto_commit=True,
+                value_deserializer=lambda m: m.decode("utf-8")
+                
+            )
 
+            print("Detection History Consumer Connected")
+            break
 
-for message in consumer:
-    print("MESSAGE RECEIVED")
-    print(message.value)
-    
-    event = json.loads(
-        message.value.decode("utf-8")
-    )
+        except Exception as e:
 
-    print(event)
+            print("Waiting for Kafka...")
+            print(e)
 
-    required_fields = [
-        "person_id",
-        "embedding",
-        "store_id",
-        "camera_id",
-        "pic_id",
-        "timestamp",
-        "image_path"
-    ]
+            time.sleep(5)
 
-    missing_fields = [
+    milvus_service = MilvusService()
 
-        field
+    print("Detection History Consumer Started...")
 
-        for field in required_fields
+    for message in consumer:
 
-        if field not in event
+        try:
 
-    ]
+            event = json.loads(message.value)
 
-    if missing_fields:
+        except Exception as e:docker logs -f consumer
 
-        print(
-            "OLD EVENT SKIPPED:",
-            missing_fields
+            print("BAD MESSAGE:")
+            print(message.value)
+            print(e)
+
+            continue
+
+        print("\n=== RECEIVED EVENT ===")
+        print(event)
+        print("======================\n")
+
+        required_fields = [
+            "person_id",
+            "embedding",
+            "store_id",
+            "camera_id",
+            "pic_id",
+            "timestamp",
+            "image_path"
+        ]
+
+        missing_fields = [
+            field
+            for field in required_fields
+            if field not in event
+        ]
+
+        if missing_fields:
+
+            print(
+                "OLD EVENT SKIPPED:",
+                missing_fields
+            )
+
+            continue
+
+        milvus_service.insert_event(
+            person_id=event["person_id"],
+            embedding=event["embedding"],
+            store_id=event["store_id"],
+            camera_id=event["camera_id"],
+            pic_id=event["pic_id"],
+            timestamp=event["timestamp"],
+            image_path=event["image_path"]
         )
 
-        continue
+        print(
+            f"Detection Event Stored | "
+            f"Person={event['person_id']} | "
+            f"Camera={event['camera_id']}"
+        )
+
+        print(
+            "Total Events:",
+            milvus_service.get_event_count()
+        )
 
 
-    print("\n=== RECEIVED EVENT ===")
-    print(event)
-    print("======================\n")
-    milvus_service.insert_event(
-        person_id=event["person_id"],
-        embedding=event["embedding"],
-        store_id=event["store_id"],
-        camera_id=event["camera_id"],
-        pic_id=event["pic_id"],
-        timestamp=event["timestamp"],
-        image_path=event["image_path"]
-    )
-
-    print(
-        f"Detection Event Stored | "
-        f"Person={event['person_id']} | "
-        f"Camera={event['camera_id']}"
-    )
-
-    print(
-        "Total Events:",
-        milvus_service.get_event_count()
-    )
+if __name__ == "__main__":
+    start_consumer()

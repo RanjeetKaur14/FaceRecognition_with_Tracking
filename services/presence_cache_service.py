@@ -88,7 +88,7 @@ class PresenceCacheService:
     def find_cached_person(
         self,
         embedding,
-        threshold=0.60
+        threshold=0.45
     ):
 
         if embedding is None:
