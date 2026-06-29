@@ -51,7 +51,7 @@ def _coerce_id(value: int) -> "str | int":
 
 def _coerce_event(event: dict) -> dict:
     """Coerce all large INT64 ID fields in one event dict."""
-    for field in ("event_id", "person_id"):
+    for field in ("person_id",):
         if field in event:
             event[field] = _coerce_id(event[field])
     return event
@@ -251,7 +251,6 @@ def get_events():
             "store_id",
             "timestamp",
             "image_path",
-            "event_id",
         ]
     )
 
@@ -319,7 +318,6 @@ async def stream_events():
                 events = c.query(
                     expr="person_id >= 0",
                     output_fields=[
-                        "event_id",
                         "person_id",
                         "camera_id",
                         "store_id",
